@@ -808,15 +808,21 @@
     }
     var slot = -1;
     seats.forEach(function (s, i) { if (slot < 0 && s.type === 'online' && !s.guestId) slot = i; });
+    /* Sebelum permainan dimulai, kursi bot yang masih kosong boleh dipakai tamu:
+       tuan rumah cukup membagikan kode, empat orang langsung dapat kursi. */
+    if (slot < 0 && !state) {
+      seats.forEach(function (s, i) { if (slot < 0 && (s.type === 'bot' || s.type === 'sedang-bot') && !s.guestId) slot = i; });
+    }
     if (slot < 0) {
       Net.sendToGuest(d.id, { kind: 'room-full' });
       return;
     }
     seats[slot].guestId = d.id;
+    seats[slot].type = 'online';
+    seats[slot].bot = null;
     seats[slot].name = d.name || ('Tamu ' + (slot + 1));
     Net.sendToGuest(d.id, { kind: 'welcome', seat: slot, seats: pubSeats() });
     if (state) {
-      seats[slot].type = 'online';
       state.players[slot].bot = null;
       state.players[slot].name = seats[slot].name;
       broadcast(); render(); scheduleBot();

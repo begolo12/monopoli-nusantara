@@ -126,7 +126,9 @@
         Object.keys(guestConns).forEach(function (gid) {
           if (guestConns[gid] === conn) {
             delete guestConns[gid];
-            emit('guest-bye', { id: gid });
+            /* 'close' = koneksi putus mendadak (HP mati layar, sinyal hilang).
+               Kursinya tidak dibuang permanen; tamu bisa mengambilnya lagi. */
+            emit('guest-bye', { id: gid, reason: 'close' });
           }
         });
       });
@@ -165,15 +167,6 @@
           peer = p;
           emit('host-net', { ok: true, message: 'Online siap. Bagikan kode ke pasangan, biarkan tab ini terbuka.' });
         });
-        p.on('connection', function (conn) {
-          conn.on('data', function (m) { onBusMessage(m, conn); });
-          conn.on('close', function () {
-            Object.keys(guestConns).forEach(function (gid) {
-              if (guestConns[gid] === conn) { delete guestConns[gid]; emit('guest-bye', { id: gid }); }
-            });
-          });
-          conn.on('error', function () { /* abaikan */ });
-        });
         p.on('error', function (e) {
           if (e && e.type === 'unavailable-id') {
             try { p.destroy(); } catch (x) { /* abaikan */ }
@@ -193,8 +186,11 @@
   }
 
   /* ---- tamu ---- */
-  function joinRoom(code, name) {
-    close();
+  function joinRoom(code, name, opts) {
+    /* silent dipakai saat gabung ulang: kursi lama dipakai lagi, jadi jangan
+       mengirim 'bye' yang justru membebaskan kursi itu. */
+    var silent = !!(opts && opts.silent);
+    close(silent);
     isHost = false; room = (code || '').toUpperCase().trim(); myId = guestId();
     localOpen(room);
     emit('room', { room: room, id: myId });
@@ -213,7 +209,7 @@
         conn.on('close', function () {
           hostConn = null;
           if (!joined.host) emit('error', { message: 'Host tidak menjawab. Pastikan kode ruang benar dan tab host masih terbuka.' });
-          else emit('room-closed', {});
+          else emit('conn-lost', {});
         });
         conn.on('error', function () { /* abaikan, close menyusul */ });
       });
@@ -269,25 +265,32 @@
     busPost(Object.assign({ from: myId, to: gid, room: room }, msg));
   }
 
+  /* Host memakainya untuk membedakan "tamu menutup ruang/koneksi" dari
+     "koneksi putus sebentar, tamu masih di sana". */
+  function isGuestOnline(id) {
+    var c = guestConns[id];
+    return !!(c && c.open !== false);
+  }
+
   function onBusMessage(m, conn) {
     if (!m || m.room !== room || !m._mid || !remember(m._mid)) return;
     if (isHost) {
       if (m.to !== 'host' || m.from === myId) return;
       if (conn && m.kind === 'hello') guestConns[m.from] = conn;
       if (m.kind === 'hello') { emit('guest-hello', { id: m.from, name: m.name }); joined[m.from] = true; }
-      else if (m.kind === 'bye') { emit('guest-bye', { id: m.from }); delete joined[m.from]; delete guestConns[m.from]; }
+      else if (m.kind === 'bye') { emit('guest-bye', { id: m.from, reason: 'bye' }); delete joined[m.from]; delete guestConns[m.from]; }
       else emit('guest-msg', { id: m.from, msg: m });
     } else {
       if (m.kind === 'bye-room') { emit('room-closed', {}); return; }
       if (m.from !== 'host' && m.to !== myId && m.to !== 'all') return;
-      if (m.kind === 'welcome') { joined.host = true; emit('joined', { id: myId, seat: m.seat }); }
+      if (m.kind === 'welcome') { joined.host = true; emit('joined', { id: myId, seat: m.seat, seats: m.seats }); }
       else emit('host-msg', m);
     }
   }
 
-  function close() {
-    if (!isHost && (hostSend || hostConn)) { try { busPost({ from: myId, to: 'host', room: room, kind: 'bye' }); } catch (e) { /* abaikan */ } }
-    if (isHost && room) { try { busPost({ from: myId, to: 'all', room: room, kind: 'bye-room' }); } catch (e) { /* abaikan */ } }
+  function close(silent) {
+    if (!silent && !isHost && (hostSend || hostConn)) { try { busPost({ from: myId, to: 'host', room: room, kind: 'bye' }); } catch (e) { /* abaikan */ } }
+    if (!silent && isHost && room) { try { busPost({ from: myId, to: 'all', room: room, kind: 'bye-room' }); } catch (e) { /* abaikan */ } }
     try {
       Object.keys(guestConns).forEach(function (gid) { try { guestConns[gid].close(); } catch (e) { /* abaikan */ } });
       if (hostConn) { try { hostConn.close(); } catch (e) { /* abaikan */ } }
@@ -301,7 +304,7 @@
 
   window.MonoNet = {
     on: on, hostRoom: hostRoom, joinRoom: joinRoom,
-    send: send, sendToGuest: sendToGuest, close: close,
+    send: send, sendToGuest: sendToGuest, isGuestOnline: isGuestOnline, close: close,
     get isHost() { return isHost; },
     get myId() { return myId; },
     get room() { return room; }

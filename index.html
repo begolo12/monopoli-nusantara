@@ -21,6 +21,8 @@
     </div>
   </header>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
   <main class="table">
     <section class="board-wrap" aria-label="Papan permainan">
       <div class="zoombar" role="group" aria-label="Zoom papan">
@@ -39,7 +41,7 @@
             <div id="dice" class="dice" aria-live="polite"><span class="dice-idle">Dadu siap</span></div>
             <div class="deck deck-chest">Dana Umum <small><span id="deckChest" class="num">16</span> kartu</small></div>
           </div>
-          <span id="turnChip" class="turn-chip">Siap bermain</span>
+          <span id="turnChip" class="turn-chip" aria-live="polite">Siap bermain</span>
         </div>
         <div id="tokens" class="tokens" aria-hidden="true"></div>
       </div>
@@ -58,6 +60,7 @@
     </aside>
   </main>
 
+  <div id="ppScrim" class="pp-scrim" hidden></div>
   <div id="overlay" class="overlay" hidden></div>
 
   <noscript>

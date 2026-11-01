@@ -552,7 +552,7 @@
     if (tr.cash > 0) bits.push(fmt(tr.cash));
     var left = bits.length ? bits.join(' + ') : 'tidak ada';
     var right = tr.get.length ? names(tr.get) : 'tidak ada';
-    return left + ' ditukar ' + right;
+    return left + ' untuk ' + right;
   }
 
   function answerTrade(s, accept) {

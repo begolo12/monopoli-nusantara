@@ -16,7 +16,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var boardEl = $('board'), tokensEl = $('tokens'), controlsEl = $('controls'),
       playersEl = $('players'), logEl = $('log'), turnCardEl = $('turnCard'),
-      propPanelEl = $('propPanel'), diceEl = $('dice'), turnChipEl = $('turnChip'),
+      propPanelEl = $('propPanel'), assetsEl = $('assets'), diceEl = $('dice'), turnChipEl = $('turnChip'),
       deckChanceEl = $('deckChance'), deckChestEl = $('deckChest');
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -337,6 +337,53 @@
     }).join('');
   }
 
+  /* ---------- daftar aset ----------
+     Tanpa ringkasan ini, mengelola hipotek/rumah harus mencari petaknya satu per
+     satu di papan — hampir mustahil di layar HP yang kecil. Satu sentuhan chip
+     membuka panel aksi petak itu (bangun, jual, hipotek, tebus, tawar). */
+  function assetSeat() {
+    if (!state) return null;
+    var a = actorSeat();
+    if (a >= 0 && state.players[a] && !state.players[a].bot && iControl(a)) return a;
+    for (var i = 0; i < state.players.length; i++) {
+      if (!state.players[i].bot && !state.players[i].bankrupt && iControl(i)) return i;
+    }
+    return null;
+  }
+
+  function renderAssets() {
+    if (!assetsEl) return;
+    if (!state || state.phase === 'over') { assetsEl.hidden = true; return; }
+    var seat = assetSeat();
+    if (seat === null) { assetsEl.hidden = true; return; }
+    var p = state.players[seat];
+    var mine = BOARD.filter(function (t) { return state.props[t.id] && state.props[t.id].owner === seat; });
+    var html = '<h2>Aset ' + esc(p.name) + ' · ' + mine.length + ' properti</h2>';
+    if (!mine.length) {
+      html += '<p class="as-empty">Belum ada properti. Singgahi petak kosong lalu pilih Beli agar bisa menagih sewa dari lawan.</p>';
+    } else {
+      html += '<div class="as-list">' + mine.map(function (t) {
+        var pr = state.props[t.id];
+        var tag = pr.mortgaged ? '<span class="as-tag as-mg">hipotek</span>'
+          : pr.houses === 5 ? '<span class="as-tag">hotel</span>'
+          : pr.houses > 0 ? '<span class="as-tag num">' + pr.houses + ' rumah</span>' : '';
+        return '<button type="button" class="as-chip' + (pr.mortgaged ? ' mg' : '') + (selectedId === t.id ? ' sel' : '') +
+          '" data-id="' + t.id + '" aria-pressed="' + (selectedId === t.id) + '">' +
+          '<span class="as-swatch grp-' + (t.group || 'util') + '" aria-hidden="true"></span>' +
+          '<span class="as-name">' + esc(t.name) + '</span>' + tag + '</button>';
+      }).join('') + '</div>';
+    }
+    assetsEl.innerHTML = html;
+    assetsEl.hidden = false;
+    Array.prototype.forEach.call(assetsEl.querySelectorAll('.as-chip'), function (el) {
+      el.addEventListener('click', function () {
+        var id = Number(el.dataset.id);
+        selectedId = (selectedId === id ? null : id);
+        render();
+      });
+    });
+  }
+
   function renderTurnCard() {
     /* Saat properti ditawarkan atau tawaran dagang menunggu jawaban, yang
        menjadi pusat perhatian adalah pemain yang harus memutuskan, bukan
@@ -534,7 +581,7 @@
     if (!state) return;
     /* Tamu online tidak melewati beginPlay(), jadi bidak bisa belum dibuat. */
     if (!tokensEl.children.length) buildTokens();
-    renderTiles(); renderPlayers(); renderTurnCard(); renderControls(); renderPropPanel(); renderLog();
+    renderTiles(); renderPlayers(); renderTurnCard(); renderControls(); renderAssets(); renderPropPanel(); renderLog();
     state.players.forEach(function (p) { placeToken(p.id, p.pos, true); });
     focusBoard();
     deckChanceEl.textContent = state.decks.chance.length;
@@ -851,6 +898,7 @@
     clearTimeout(toastTimer);
     tradeDismissed = false;
     focusKey = '';
+    if (assetsEl) { assetsEl.hidden = true; assetsEl.innerHTML = ''; }
     session = { mode: 'local', mySeats: [0, 1, 2, 3], isHost: true, room: null, mySeat: null, myName: '', netState: null };
     seats = [];
     openStart();

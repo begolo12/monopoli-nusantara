@@ -109,23 +109,25 @@
 
   function sellHouseValue(id) { return tile(+id).house / 2; }
 
-  function liquidate(s, p) {
-    // Jual semua bangunan, lalu hipotekkan semua properti tanpa hipotek.
-    var raised = 0, changed = true;
-    while (changed) {
-      changed = false;
+  function liquidate(s, p, need) {
+    /* Likuidasi bertahap: jual bangunan satu per satu, lalu hipotekkan satu per satu,
+       dan berhenti begitu uangnya cukup. Menjual segalanya sekaligus membuat pemain
+       yang sebetulnya masih selamat kehilangan seluruh asetnya tanpa alasan. */
+    var raised = 0;
+    var enough = function () { return need == null || p.cash + raised >= need; };
+    while (!enough()) {
       var best = null;
       Object.keys(s.props).forEach(function (id) {
         var pr = s.props[id];
         if (pr.owner === p.id && pr.houses > 0 && (best === null || pr.houses > s.props[best].houses)) best = id;
       });
-      if (best !== null) {
-        var v = sellHouseValue(best);
-        s.props[best].houses -= 1; raised += v; changed = true;
-        log(s, p.name + ' menjual bangunan di ' + tile(+best).name + ' (+' + fmt(v) + ').', 'warn');
-      }
+      if (best === null) break;
+      var v = sellHouseValue(best);
+      s.props[best].houses -= 1; raised += v;
+      log(s, p.name + ' menjual bangunan di ' + tile(+best).name + ' (+' + fmt(v) + ').', 'warn');
     }
     BOARD.forEach(function (t) {
+      if (enough()) return;
       var pr = s.props[t.id];
       if (pr && pr.owner === p.id && !pr.mortgaged) {
         var val = t.price / 2;
@@ -168,7 +170,7 @@
   function transfer(s, fromId, toId, amount, note) {
     var p = s.players[fromId];
     if (p.bankrupt) return;
-    if (p.cash < amount) liquidate(s, p);
+    if (p.cash < amount) liquidate(s, p, amount);
     if (p.cash < amount) {
       var rest = p.cash;
       if (toId !== null) s.players[toId].cash += rest;
@@ -672,6 +674,7 @@
     rentOf: rentOf, canBuild: canBuild, canSellBuilding: canSellBuilding,
     buildHouse: buildHouse, sellBuilding: sellBuilding,
     canMortgage: canMortgage, mortgage: mortgage, canUnmortgage: canUnmortgage, unmortgage: unmortgage, unmortgageCost: unmortgageCost,
+    transfer: transfer,
     ownsGroup: ownsGroup, houseCount: houseCount, log: log,
     proposeTrade: proposeTrade, answerTrade: answerTrade, canOffer: canOffer, tradeText: tradeText, tradeValue: tradeValue,
     snapshot: snapshot, restore: restore, intent: intent

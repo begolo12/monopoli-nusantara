@@ -52,6 +52,46 @@ function invariants(s, tag) {
   check(G.fmt(1500000) === 'Rp 1.500.000', 'format rupiah');
 }
 
+/* unit: likuidasi bertahap saat tidak bisa membayar */
+{
+  const hv = D.BOARD[1].house / 2;          // hasil jual satu rumah di petak 1
+  const m1 = Math.floor(D.BOARD[1].price / 2); // hasil hipotek petak 1
+
+  // utang kecil: cukup jual satu rumah, tidak ada yang dihipotek
+  {
+    const s = G.create(['A', 'B', 'C', 'D']);
+    s.props[1].owner = 0; s.props[3].owner = 0; s.props[1].houses = 1;
+    s.players[0].cash = 0;
+    G.transfer(s, 0, 1, hv, null);
+    check(s.props[1].houses === 0, 'likuidasi: rumah terjual');
+    check(!s.props[1].mortgaged && !s.props[3].mortgaged, 'likuidasi: tidak ada hipotek saat uang sudah cukup');
+    check(!s.players[0].bankrupt && s.players[0].cash === 0, 'likuidasi: pemain selamat tanpa utang sisa');
+    check(s.players[1].cash === D.RULES.startCash + hv, 'likuidasi: kreditur dibayar penuh');
+  }
+
+  // utang sedang: jual rumah + satu hipotek saja, properti lain tetap bebas
+  {
+    const s = G.create(['A', 'B', 'C', 'D']);
+    s.props[1].owner = 0; s.props[3].owner = 0; s.props[1].houses = 1;
+    s.players[0].cash = 0;
+    G.transfer(s, 0, 1, hv + m1, null);
+    const mortgaged = [1, 3].filter((id) => s.props[id].mortgaged).length;
+    check(mortgaged === 1, `likuidasi: tepat satu hipotek (nyata ${mortgaged})`);
+    check(!s.players[0].bankrupt, 'likuidasi: pemain selamat dengan satu hipotek');
+  }
+
+  // utang mustahil: bangkrut, aset berpindah ke kreditur
+  {
+    const s = G.create(['A', 'B', 'C', 'D']);
+    s.props[1].owner = 0; s.props[3].owner = 0; s.props[1].houses = 1;
+    s.players[0].cash = 0;
+    G.transfer(s, 0, 1, hv + m1 + Math.floor(D.BOARD[3].price / 2) + 1, null);
+    check(s.players[0].bankrupt, 'likuidasi: bangkrut saat aset tak cukup');
+    check(s.props[1].owner === 1 && s.props[3].owner === 1, 'likuidasi: aset pindah ke kreditur');
+    check(s.props[1].houses === 0, 'likuidasi: rumah kembali ke bank saat bangkrut');
+  }
+}
+
 /* simulasi acak */
 const GAMES = 150, MAXSTEPS = 20000;
 let finished = 0, totalSteps = 0;

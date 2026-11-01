@@ -359,6 +359,18 @@
   background: color-mix(in oklab, var(--color-accent) 22%, var(--color-card));
   color: var(--color-ink-2); font-size: var(--text-sm);
 }
+/* Tangga sewa: tingkat sekarang disorot supaya rencana bangun terbaca sekilas. */
+.pp-rent { display: flex; flex-wrap: wrap; gap: var(--space-3xs); }
+.pp-rent-c {
+  display: inline-flex; flex-direction: column; gap: 1px;
+  padding: 4px 9px; border-radius: 10px;
+  background: var(--color-paper-3); color: var(--color-muted);
+  font-size: var(--text-xs); line-height: 1.25;
+}
+.pp-rent-c strong { color: var(--color-ink); font-size: var(--text-xs); }
+.pp-rent-c.cur { background: var(--color-accent); color: var(--color-accent-ink); }
+.pp-rent-c.cur strong { color: var(--color-accent-ink); }
+.pp-rent.off .pp-rent-c { opacity: 0.5; }
 .pp-acts { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-2xs); }
 .pp-acts .btn { flex: 1 1 130px; min-height: 48px; padding: 6px var(--space-sm); text-align: left; }
 .pp-acts .pa-t { display: block; font-size: var(--text-sm); line-height: 1.2; }
@@ -759,6 +771,9 @@ noscript .sheet { margin: var(--space-xl) auto; }
   .mode-ic { width: 38px; height: 38px; }
   .mode { grid-template-columns: 38px minmax(0, 1fr) auto; }
   .pp-grid { gap: var(--space-xs) var(--space-sm); }
+  /* Tangga sewa harus terbaca di layar kecil tanpa perlu dicubit. */
+  .pp-rent-c { padding: 6px 10px; font-size: var(--text-sm); }
+  .pp-rent-c strong { font-size: var(--text-sm); }
   .trade-sides { grid-template-columns: minmax(0, 1fr); }
   .trade-swap { display: none; }
   .trade-side + .trade-side { margin-top: var(--space-2xs); }

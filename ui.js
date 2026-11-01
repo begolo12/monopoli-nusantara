@@ -32,7 +32,8 @@
     x: '<path d="M5.5 5.5l13 13M18.5 5.5l-13 13"/>',
     swap: '<path d="M4 9h13.5M14 5.5 17.5 9 14 12.5M20 15H6.5M10 11.5 6.5 15 10 18.5"/>',
     share: '<path d="M12 3.5v11M8.5 7 12 3.5 15.5 7"/><path d="M5 12.5v6A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-6"/>',
-    copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M5.5 15.5h-1A1.5 1.5 0 0 1 3 14V5.5A1.5 1.5 0 0 1 4.5 4H13a1.5 1.5 0 0 1 1.5 1.5v1"/>'
+    copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M5.5 15.5h-1A1.5 1.5 0 0 1 3 14V5.5A1.5 1.5 0 0 1 4.5 4H13a1.5 1.5 0 0 1 1.5 1.5v1"/>',
+    install: '<path d="M12 3.5v10M8.2 9.8l3.8 3.9 3.8-3.9"/><path d="M4.5 16v2.5A2 2 0 0 0 6.5 20.5h11a2 2 0 0 0 2-2V16"/>'
   };
   function icon(name) {
     return '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>';
@@ -320,6 +321,18 @@
     });
   }
 
+  /* Kekayaan = uang + nilai properti (setengah harga bila terhipotek) + nilai
+     bangunan. Angka ini yang paling jujur untuk membandingkan pemain. */
+  function netWorth(p) {
+    var w = p.cash;
+    BOARD.forEach(function (t) {
+      var pr = state.props[t.id];
+      if (!pr || pr.owner !== p.id) return;
+      w += (pr.mortgaged ? Math.floor((t.price || 0) / 2) : (t.price || 0)) + pr.houses * (t.house || 0);
+    });
+    return w;
+  }
+
   function renderPlayers() {
     playersEl.innerHTML = state.players.map(function (p) {
       var props = Object.keys(state.props).filter(function (id) { return state.props[id].owner === p.id; }).length;
@@ -332,7 +345,7 @@
       return '<li class="pl pl-' + p.color + (p.id === state.turn ? ' now' : '') + (p.bankrupt ? ' out' : '') + '">' +
         '<span class="pl-dot tok-' + p.color + '">' + esc(p.name.charAt(0).toUpperCase()) + '</span>' +
         '<span class="pl-name">' + esc(p.name) + '</span>' + badges +
-        '<span class="pl-meta num">' + props + ' properti</span>' +
+        '<span class="pl-meta num">' + props + ' properti · kekayaan ' + G.fmt(netWorth(p)) + '</span>' +
         '<span class="pl-cash num">' + G.fmt(p.cash) + '</span></li>';
     }).join('');
   }
@@ -508,6 +521,16 @@
         '<div class="pp-cell"><span>Pemilik</span><strong>' + esc(ownerName) + '</strong></div>' +
       '</div>';
     if (pr.mortgaged) html += '<p class="pp-line">Dihipotekkan: sewa tidak dibayar sampai properti ditebus.</p>';
+    /* Tangga sewa: pemain langsung tahu berapa yang akan ditagih setelah
+        membangun — tanpa membuka aturan atau menebak-nebak. */
+    if (t.rent && t.house) {
+      var rentLabels = ['Tanpa rumah', '1 rumah', '2 rumah', '3 rumah', '4 rumah', 'Hotel'];
+      html += '<div class="pp-rent' + (pr.mortgaged ? ' off' : '') + '" role="group" aria-label="Tangga sewa">' +
+        rentLabels.map(function (lbl, i) {
+          return '<span class="pp-rent-c' + (pr.houses === i ? ' cur' : '') + '"><span>' + lbl + '</span>' +
+            '<strong class="num">' + G.fmt(t.rent[i]) + '</strong></span>';
+        }).join('') + '</div>';
+    }
     if (t.type === 'rail') html += '<p class="pp-note">Sewa naik untuk tiap stasiun yang dipegang pemilik yang sama.</p>';
     if (t.type === 'util') html += '<p class="pp-note">Sewa = 4× angka dadu, atau 10× bila kedua utilitas satu pemilik.</p>';
     if (t.house && !pr.mortgaged) {
@@ -524,7 +547,8 @@
     var inTurn = pr.owner === actor && mine && state.phase !== 'over' && !state.pendingMove && !state.trade;
     if (inTurn && (state.phase === 'roll' || state.phase === 'end' || state.phase === 'resolve-buy')) {
       if (t.house) {
-        acts.appendChild(moneyBtn('Bangun rumah', G.fmt(t.house), function () { act('build', { id: selectedId }); }, !G.canBuild(state, selectedId, actor)));
+        /* Label mengikuti tingkat bangunan: rumah 1-4, lalu hotel. */
+        acts.appendChild(moneyBtn(pr.houses >= 4 ? 'Bangun hotel' : 'Bangun rumah', G.fmt(t.house), function () { act('build', { id: selectedId }); }, !G.canBuild(state, selectedId, actor)));
         acts.appendChild(moneyBtn('Jual rumah', '+' + G.fmt(t.house), function () { act('sellBuilding', { id: selectedId }); }, !G.canSellBuilding(state, selectedId, actor)));
       }
       if (pr.mortgaged) {
@@ -989,7 +1013,46 @@
     $('mHost').addEventListener('click', function () { openHostSetup(); });
     $('mJoin').addEventListener('click', function () { openJoinSetup(); });
     if (last) $('mResume').addEventListener('click', function () { openJoinSetup(last.room, last.name); });
+    addInstallBtn();
   }
+
+  /* ---------- pasang sebagai aplikasi (PWA) ----------
+     Di HP, game yang terpasang terasa seperti aplikasi biasa: ikon di layar
+     utama, layar penuh, dan tetap terbuka walau sinyal hilang. */
+  var installPrompt = null;
+  function addInstallBtn() {
+    var grid = document.querySelector('.mode-grid');
+    if (!grid || !installPrompt || document.getElementById('mInstall')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'mode';
+    b.id = 'mInstall';
+    b.innerHTML = '<span class="mode-ic">' + icon('install') + '</span>' +
+      '<span class="mode-txt"><span class="mode-t">Pasang sebagai aplikasi</span>' +
+      '<span class="mode-s">Ikon di layar utama HP; tetap jalan tanpa internet.</span></span>' +
+      '<span class="mode-go">' + icon('arrow') + '</span>';
+    b.addEventListener('click', function () {
+      if (!installPrompt) return;
+      var pr = installPrompt;
+      installPrompt = null;
+      pr.prompt();
+      (pr.userChoice || Promise.resolve()).then(function () { removeInstallBtn(); });
+    });
+    grid.appendChild(b);
+  }
+  function removeInstallBtn() {
+    var b = document.getElementById('mInstall');
+    if (b) b.parentNode.removeChild(b);
+  }
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    installPrompt = e;
+    addInstallBtn();
+  });
+  window.addEventListener('appinstalled', function () {
+    installPrompt = null;
+    removeInstallBtn();
+  });
 
   /* Susunan cepat: pasangan LDR biasanya berdua + dua bot, tapi semuanya bisa diubah. */
   var PRESETS = {

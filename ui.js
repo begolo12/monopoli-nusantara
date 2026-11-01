@@ -194,8 +194,12 @@
   }
 
   async function animatePath(pid, path) {
+    /* Di HP papan 100% terlalu kecil untuk diikuti. Saat bidak berjalan,
+       besarkan papan sekali di awal lalu ikuti petaknya langkah demi langkah. */
+    if (path.length && narrowScreen() && zoom < FOCUS_MIN) setZoom(FOCUS_ZOOM);
     for (var i = 0; i < path.length; i++) {
       placeToken(pid, path[i]);
+      if (narrowScreen()) centerTile(path[i], false);
       /* Langkah ringkas: 12 langkah (dadu kembar 6+6) selesai di bawah 1,4 detik. */
       await sleep(110);
     }
@@ -543,28 +547,36 @@
 
   /* Di HP papan lebih lebar dari layar; geser otomatis ke bidak pemain yang sedang jalan. */
   var focusKey = '';
+  function narrowScreen() { return window.matchMedia('(max-width: 62rem)').matches; }
+  /* Geser HANYA jendela papan, jangan halaman: supaya zoom & tombol aksi tidak terdorong keluar layar. */
+  function centerTile(tileId, smooth) {
+    var t = tileEl(tileId), sc = $('boardScroll');
+    if (!t || !sc) return;
+    var maxL = Math.max(0, sc.scrollWidth - sc.clientWidth);
+    var maxT = Math.max(0, sc.scrollHeight - sc.clientHeight);
+    var left = Math.max(0, Math.min(maxL, t.offsetLeft + t.offsetWidth / 2 - sc.clientWidth / 2));
+    var top = Math.max(0, Math.min(maxT, t.offsetTop + t.offsetHeight / 2 - sc.clientHeight / 2));
+    sc.scrollTo({ left: left, top: top, behavior: smooth ? 'smooth' : 'auto' });
+  }
   function focusBoard() {
     if (!state) return;
-    if (!window.matchMedia('(max-width: 62rem)').matches) return;
+    if (!narrowScreen()) return;
     var p = state.players[state.turn];
     if (!p) return;
     var key = state.turn + ':' + p.pos;
     if (key === focusKey) return;
     focusKey = key;
+    /* Di HP, giliran baru langsung dibesarkan ke petak pemain aktif. */
+    if (state.phase !== 'over' && zoom < FOCUS_MIN) setZoom(FOCUS_ZOOM);
     var t = tileEl(p.pos);
     if (!t) return;
     var sc = $('boardScroll');
     if (!sc) return;
-    /* Geser HANYA jendela papan, jangan halaman: supaya zoom & tombol aksi tidak terdorong keluar layar. */
+    /* Kalau petak sudah terlihat, jangan geser papan tanpa perlu. */
     var wr = sc.getBoundingClientRect();
     var tr = t.getBoundingClientRect();
     var seen = tr.left >= wr.left && tr.right <= wr.right && tr.top >= wr.top && tr.bottom <= wr.bottom;
-    if (seen) return;
-    sc.scrollTo({
-      left: t.offsetLeft + t.offsetWidth / 2 - sc.clientWidth / 2,
-      top: t.offsetTop + t.offsetHeight / 2 - sc.clientHeight / 2,
-      behavior: 'smooth'
-    });
+    if (!seen) centerTile(p.pos, true);
   }
 
   function tradeName(id) { return BOARD[id].name; }
@@ -1531,6 +1543,8 @@
   /* ---------- zoom papan (penting di HP) ---------- */
 
   var zoom = 1;
+  var FOCUS_ZOOM = 1.5;   // cukup besar untuk membaca nama petak di HP
+  var FOCUS_MIN = 1.25;   // di bawah ini papan dianggap terlalu kecil untuk diikuti
   /* Lebar papan pada zoom 100% (CSS: max(640px, 100%)); diukur sekali, bukan memakai lebar jendela. */
   function boardBase() {
     var prev = boardEl.style.width;
@@ -1547,17 +1561,25 @@
     }
     var zr = $('zoomReset');
     if (zr) zr.textContent = Math.round(zoom * 100) + '%';
-    if (state) state.players.forEach(function (p) { placeToken(p.id, p.pos, true); });
+    if (state) state.players.forEach(function (p) {
+      /* Saat animasi berjalan, state sudah di petak tujuan. Pakai petak yang
+         sedang tampil supaya bidak tidak melompat ke tujuan ketika di-zoom. */
+      var el = tokensEl.querySelector('[data-p="' + p.id + '"]');
+      var shown = el && el.dataset.tile !== undefined && el.dataset.tile !== '' ? Number(el.dataset.tile) : p.pos;
+      placeToken(p.id, shown, true);
+    });
   }
-  function setZoom(z) {
+  function setZoom(z, focus) {
     zoom = Math.min(2.5, Math.max(0.5, z));
     applyZoom();
+    /* Tombol zoom di HP langsung memusatkan papan ke pemain yang sedang giliran. */
+    if (focus && state && state.players[state.turn]) centerTile(state.players[state.turn].pos, true);
   }
   function wireZoom() {
     var zin = $('zoomIn'), zout = $('zoomOut'), zr = $('zoomReset'), sc = $('boardScroll');
-    if (zin) zin.addEventListener('click', function () { setZoom(zoom + 0.25); });
-    if (zout) zout.addEventListener('click', function () { setZoom(zoom - 0.25); });
-    if (zr) zr.addEventListener('click', function () { setZoom(1); });
+    if (zin) zin.addEventListener('click', function () { setZoom(zoom + 0.25, true); });
+    if (zout) zout.addEventListener('click', function () { setZoom(zoom - 0.25, true); });
+    if (zr) zr.addEventListener('click', function () { setZoom(1, true); });
     if (sc) {
       var pinch0 = 0;
       sc.addEventListener('touchmove', function (e) {

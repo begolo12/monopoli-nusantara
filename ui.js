@@ -54,7 +54,10 @@
       if (t.type === 'tax') inner += '<span class="tprice num">' + G.fmt(t.amount) + '</span>';
       inner += '<span class="houses"></span><span class="ownring"></span>';
       el.innerHTML = inner;
-      el.addEventListener('click', function () { selectedId = (selectedId === t.id ? null : t.id); render(); });
+      el.addEventListener('click', function () {
+        selectedId = (selectedId === t.id ? null : t.id);
+        render();
+      });
       boardEl.appendChild(el);
     });
   }
@@ -131,9 +134,16 @@
 
   function isBotSeat(i) { return !!(state && state.players[i].bot); }
   function iControl(i) { return session.mySeats.indexOf(i) > -1; }
+  /* Kursi yang sedang harus bertindak: saat dagang yang menjawab, saat tawar properti yang ditawari. */
+  function actorSeat() {
+    if (!state) return -1;
+    return state.trade ? state.trade.to : (state.phase === 'resolve-buy' ? state.pendingBuyer : state.turn);
+  }
   function isMyActionTurn() {
     if (!state || state.phase === 'over') return false;
-    if (!iControl(state.turn)) return false;
+    var seat = actorSeat();
+    if (typeof seat !== 'number' || seat < 0 || !state.players[seat]) return false;
+    if (!iControl(seat) || state.players[seat].bot) return false;
     return ['roll', 'jail', 'resolve-buy', 'card', 'end'].indexOf(state.phase) > -1;
   }
   function seatLabel() {
@@ -207,9 +217,20 @@
     var b = document.createElement('button');
     b.className = 'btn ' + (cls || '');
     b.textContent = label;
-    b.disabled = !!disabled || busy;
+    b.disabled = !!disabled || busy || sending;
     b.addEventListener('click', fn);
     return b;
+  }
+
+  function phaseHint() {
+    switch (state.phase) {
+      case 'roll': return 'lempar dadu';
+      case 'jail': return 'di penjara';
+      case 'resolve-buy': return 'beli atau lewati';
+      case 'card': return 'buka kartu';
+      case 'end': return 'selesaikan giliran';
+      default: return '';
+    }
   }
 
   function renderControls() {
@@ -220,14 +241,20 @@
     }
     if (state.trade && state.trade.to !== undefined) {
       var tr = state.trade;
-      var meAnswer = !state.players[tr.to].bot && ((session.mode !== 'online') || tr.to === session.mySeat || (session.isHost && seats[tr.to] && !seats[tr.to].guestId));
-      if (meAnswer && !busy) {
-        controlsEl.appendChild(btn('Terima Dagang', 'btn--primary', function () { act('answer', { accept: true }); }));
-        controlsEl.appendChild(btn('Tolak', '', function () { act('answer', { accept: false }); }));
-        return;
+      var meAnswer = tradeMine(tr);
+      // Jawaban lewat tombol di dalam modal dagang; di sini sediakan jalan
+      // pintas bila modal sedang ditutup (Lihat Papan Dulu) + tombol tutup darurat.
+      if (meAnswer && tradeDismissed && !busy) {
+        controlsEl.appendChild(btn('Jawab Dagang', 'btn--primary', function () { tradeDismissed = false; showTrade(); }));
       }
       return;
     }
+    var status = document.createElement('span');
+    status.className = 'ctl-status';
+    var ap = state.players[actorSeat()];
+    status.innerHTML = 'Giliran <strong>' + esc(ap ? ap.name : '-') + '</strong>' + (phaseHint() ? ' · ' + phaseHint() : '');
+    controlsEl.appendChild(status);
+    if (sending) { status.innerHTML = 'Menunggu host memproses aksi…'; return; }
     if (!isMyActionTurn()) return;
     var p = G.cur(state);
     if (session.mode === 'online' && !session.isHost && state.phase === 'card' && state.pendingMove) return;
@@ -248,10 +275,10 @@
 
   function renderPropPanel() {
     if (selectedId === null || !state.props[selectedId]) { propPanelEl.hidden = true; return; }
-    var t = BOARD[selectedId], pr = state.props[selectedId], p = G.cur(state);
-    var mine = pr.owner === state.turn && iControl(state.turn);
+    var t = BOARD[selectedId], pr = state.props[selectedId];
     var ownerName = pr.owner === null ? 'Belum dimiliki' : state.players[pr.owner].name;
-    var lines = '<h3>' + t.name + '</h3>' +
+    var lines = '<div class="pp-head"><h3>' + t.name + '</h3>' +
+      '<button class="btn btn--small pp-x" id="ppClose" type="button">Tutup</button></div>' +
       '<p class="pp-line">Pemilik: <strong>' + esc(ownerName) + '</strong>' + (pr.mortgaged ? ', dihipotekkan' : '') + '</p>';
     if (t.rent) {
       lines += '<p class="pp-line">Sewa sekarang: <strong class="num">' + G.fmt(G.rentOf(state, selectedId, state.dice[0] + state.dice[1] || 7)) + '</strong></p>';
@@ -262,18 +289,23 @@
     propPanelEl.innerHTML = lines;
     var acts = document.createElement('div');
     acts.className = 'pp-acts';
-    var inTurn = mine && state.phase !== 'over' && !state.pendingMove;
-    if (inTurn) {
-      acts.appendChild(btn('Bangun (' + G.fmt(t.house || 0) + ')', 'btn--small', function () { act('build', { id: selectedId }); }, !G.canBuild(state, selectedId)));
-      acts.appendChild(btn('Jual Bangunan', 'btn--small', function () { act('sellBuilding', { id: selectedId }); }, !G.canSellBuilding(state, selectedId)));
-      acts.appendChild(btn('Hipotekkan', 'btn--small', function () { act('mortgage', { id: selectedId }); }, !G.canMortgage(state, selectedId)));
-      acts.appendChild(btn('Tebus (' + G.fmt(G.unmortgageCost(selectedId)) + ')', 'btn--small', function () { act('unmortgage', { id: selectedId }); }, !G.canUnmortgage(state, selectedId)));
-      acts.appendChild(btn('Tawar Dagang', 'btn--small', function () { openOffer(state.turn); }));
-    } else if (state.phase !== 'over' && !state.trade && !state.pendingMove && state.props[selectedId].owner !== null && state.props[selectedId].owner !== state.turn && iControl(state.turn)) {
-      acts.appendChild(btn('Tawar Properti Ini', 'btn--small', function () { openOfferTarget(state.turn, selectedId); }));
+    var actor = state.trade ? state.trade.to : (state.phase === 'resolve-buy' ? state.pendingBuyer : state.turn);
+    var inTurn = pr.owner === actor && iControl(actor) && !state.players[actor].bot && state.phase !== 'over' && !state.pendingMove && !state.trade;
+    if (inTurn && (state.phase === 'roll' || state.phase === 'end' || state.phase === 'resolve-buy')) {
+      if (t.house) {
+        acts.appendChild(btn('Bangun (' + G.fmt(t.house) + ')', 'btn--small', function () { act('build', { id: selectedId }); }, !G.canBuild(state, selectedId, actor)));
+        acts.appendChild(btn('Jual Bangunan', 'btn--small', function () { act('sellBuilding', { id: selectedId }); }, !G.canSellBuilding(state, selectedId, actor)));
+      }
+      acts.appendChild(btn('Hipotekkan', 'btn--small', function () { act('mortgage', { id: selectedId }); }, !G.canMortgage(state, selectedId, actor)));
+      acts.appendChild(btn('Tebus (' + G.fmt(G.unmortgageCost(selectedId)) + ')', 'btn--small', function () { act('unmortgage', { id: selectedId }); }, !G.canUnmortgage(state, selectedId, actor)));
+      acts.appendChild(btn('Tawar Dagang', 'btn--small', function () { openOffer(actor); }));
+    } else if (state.phase !== 'over' && !state.trade && !state.pendingMove && state.props[selectedId].owner !== null && state.props[selectedId].owner !== actor && iControl(actor) && !state.players[actor].bot) {
+      acts.appendChild(btn('Tawar Properti Ini', 'btn--small', function () { openOfferTarget(actor, selectedId); }));
     }
     propPanelEl.appendChild(acts);
     propPanelEl.hidden = false;
+    var px = $('ppClose');
+    if (px) px.addEventListener('click', function () { selectedId = null; render(); });
   }
 
   function renderLog() {
@@ -286,31 +318,80 @@
     if (!state) return;
     renderTiles(); renderPlayers(); renderTurnCard(); renderControls(); renderPropPanel(); renderLog();
     state.players.forEach(function (p) { placeToken(p.id, p.pos, true); });
+    focusBoard();
     deckChanceEl.textContent = state.decks.chance.length;
     deckChestEl.textContent = state.decks.chest.length;
-    if (overlayEl.hidden && state.trade) showTrade();
+    if (state.trade && !tradeDismissed && overlayEl.hidden) showTrade();
+    if (!state.trade) { tradeDismissed = false; if (showingTrade) hideOverlay(); }
     if (state.phase === 'over') showWinner();
+  }
+
+  /* Di HP papan lebih lebar dari layar; geser otomatis ke bidak pemain yang sedang jalan. */
+  var focusKey = '';
+  function focusBoard() {
+    if (!state) return;
+    if (!window.matchMedia('(max-width: 62rem)').matches) return;
+    var p = state.players[state.turn];
+    if (!p) return;
+    var key = state.turn + ':' + p.pos;
+    if (key === focusKey) return;
+    focusKey = key;
+    var t = tileEl(p.pos);
+    if (!t) return;
+    var sc = $('boardScroll');
+    if (!sc) return;
+    /* Geser HANYA jendela papan, jangan halaman: supaya zoom & tombol aksi tidak terdorong keluar layar. */
+    var wr = sc.getBoundingClientRect();
+    var tr = t.getBoundingClientRect();
+    var seen = tr.left >= wr.left && tr.right <= wr.right && tr.top >= wr.top && tr.bottom <= wr.bottom;
+    if (seen) return;
+    sc.scrollTo({
+      left: t.offsetLeft + t.offsetWidth / 2 - sc.clientWidth / 2,
+      top: t.offsetTop + t.offsetHeight / 2 - sc.clientHeight / 2,
+      behavior: 'smooth'
+    });
   }
 
   function tradeName(id) { return BOARD[id].name; }
   function tradeSide(ids) { return ids.length ? ids.map(tradeName).join(', ') : 'tidak ada'; }
 
+  var tradeDismissed = false;
+
+  function tradeMine(tr) {
+    return !state.players[tr.to].bot && iControl(tr.to);
+  }
+
   function showTrade() {
     var tr = state.trade;
     if (!tr) return;
     var A = state.players[tr.from], B = state.players[tr.to];
-    var waiting = B.bot ? 'Menunggu jawaban ' + B.name + ' (bot)…' :
-      (session.mode === 'online' && session.isHost && seats[tr.to] && seats[tr.to].guestId) ? 'Menunggu jawaban ' + B.name + ' (online)…' : null;
-    showOverlay('<div class="sheet trade-sheet" role="dialog" aria-modal="true">' +
+    var waiting = B.bot ? 'Menunggu jawaban ' + B.name + ' (bot).' :
+      (session.mode === 'online' && session.isHost && seats[tr.to] && seats[tr.to].guestId) ? 'Menunggu jawaban ' + B.name + ' (online).' : null;
+    var meAnswer = tradeMine(tr);
+    showOverlay('<div class="sheet trade-sheet" role="dialog" aria-modal="true" aria-labelledby="tradeTitle">' +
       '<span class="cs-deck">Tawaran dagang</span>' +
-      '<p class="cs-text">' + esc(A.name) + ' menawarkan ke ' + esc(B.name) + '.</p>' +
+      '<p class="cs-text" id="tradeTitle">' + esc(A.name) + ' menawarkan ke ' + esc(B.name) + '.</p>' +
       '<ul class="rs-list">' +
       '<li>Memberi: <strong>' + esc(tradeSide(tr.give)) + (tr.cash > 0 ? ' + ' + G.fmt(tr.cash) : '') + '</strong></li>' +
       '<li>Meminta: <strong>' + esc(tradeSide(tr.get)) + '</strong></li>' +
       '</ul>' +
-      (waiting ? '<p class="ss-sub">' + esc(waiting) + '</p>' : '') +
+      (waiting && !meAnswer ? '<p class="ss-sub">' + esc(waiting) + '</p>' : '') +
+      (meAnswer ? '<div class="pp-acts">' +
+        '<button class="btn btn--primary" id="tradeYes">Terima Dagang</button>' +
+        '<button class="btn" id="tradeNo">Tolak</button>' +
+        '<button class="btn" id="tradeLater">Lihat Papan Dulu</button></div>' : '') +
+      (!meAnswer && !waiting ? '<div class="pp-acts"><button class="btn" id="tradeClose">Tutup</button></div>' : '') +
       '</div>');
-    renderControls();
+    showingTrade = true;
+    if (meAnswer) {
+      $('tradeYes').addEventListener('click', function () { tradeDismissed = false; hideOverlay(); act('answer', { accept: true }); });
+      $('tradeNo').addEventListener('click', function () { tradeDismissed = false; hideOverlay(); act('answer', { accept: false }); });
+      $('tradeLater').addEventListener('click', function () { tradeDismissed = true; hideOverlay(); render(); });
+      $('tradeYes').focus();
+    } else {
+      var c = $('tradeClose');
+      if (c) c.addEventListener('click', function () { tradeDismissed = true; hideOverlay(); render(); });
+    }
   }
 
   function afterChange() {
@@ -321,12 +402,21 @@
 
   /* ---------- aksi manusia / tamu ---------- */
 
+  var sending = false;   // tamu online sedang menunggu host memproses aksinya
+  var sendTimer = null;
+  function sendDone() {
+    sending = false;
+    if (sendTimer) { clearTimeout(sendTimer); sendTimer = null; }
+  }
   async function act(kind, opt) {
-    if (busy || !state || state.phase === 'over') return;
+    if (busy || sending || !state || state.phase === 'over') return;
     if (session.mode === 'online' && !session.isHost) {
       if (kind === 'cardOk') { hideOverlay(); }
-      Net.send('intent', { kind: kind, opt: opt || null, seat: session.mySeat });
-      renderControls();
+      /* Aksi dikirim di kolom 'act': kolom 'kind' dipakai Net untuk jenis pesan. */
+      Net.send('intent', { act: kind, opt: opt || null, seat: session.mySeat });
+      sending = true; renderControls();
+      if (sendTimer) clearTimeout(sendTimer);
+      sendTimer = setTimeout(function () { sending = false; sendTimer = null; renderControls(); }, 8000);
       return;
     }
     busy = true; renderControls();
@@ -336,8 +426,11 @@
     if (res.path && res.path.length) await animatePath(seat, res.path);
     await snapToPos(seat);
     busy = false;
-    if (state.phase === 'card' && state.pendingCard && iControl(state.turn) && !state.players[state.turn].bot) showCard();
-    else afterChange();
+    if (state.phase === 'card' && state.pendingCard && iControl(state.turn) && !state.players[state.turn].bot) {
+      /* Kartu belum ditutup, tetapi tamu tetap harus melihat hasil lemparan sekarang. */
+      if (session.mode === 'online' && session.isHost) broadcast();
+      showCard();
+    } else afterChange();
   }
 
   /* ---------- bot ---------- */
@@ -387,8 +480,9 @@
   /* ---------- modal ---------- */
 
   var overlayEl = $('overlay');
-  function showOverlay(html) { overlayEl.innerHTML = html; overlayEl.hidden = false; }
-  function hideOverlay() { overlayEl.hidden = true; overlayEl.innerHTML = ''; }
+  var showingTrade = false;
+  function showOverlay(html) { overlayEl.innerHTML = html; overlayEl.hidden = false; showingTrade = false; }
+  function hideOverlay() { overlayEl.hidden = true; overlayEl.innerHTML = ''; showingTrade = false; }
 
   function showCard() {
     var pc = state.pendingCard;
@@ -487,7 +581,7 @@
 
   /* ---------- layar mulai / lobi ---------- */
 
-  var BOT_OPTS = [['human', 'Orang (di sini)'], ['mudah', 'Bot mudah'], ['sedang', 'Bot sedang'], ['sulit', 'Bot sulit']];
+  var BOT_OPTS = [['human', 'Orang'], ['mudah', 'Bot mudah'], ['sedang', 'Bot sedang'], ['sulit', 'Bot sulit']];
   var HOST_OPTS = [['sini', 'Saya (host)'], ['mudah', 'Bot mudah'], ['sedang', 'Bot sedang'], ['sulit', 'Bot sulit'], ['online', 'Pemain online']];
 
   function seatRow(i, name, opts, sel) {
@@ -510,7 +604,7 @@
       '</div>' +
       '<p class="ss-sub">Satu pemain pun bisa: isi kursi kosong dengan bot mudah, sedang, atau sulit.</p>' +
       '</div>');
-    $('mLocal').addEventListener('click', openLocalSetup);
+    $('mLocal').addEventListener('click', function () { openLocalSetup(); });
     $('mHost').addEventListener('click', openHostSetup);
     $('mJoin').addEventListener('click', openJoinSetup);
   }
@@ -518,14 +612,16 @@
   function openLocalSetup(prev) {
     var names = prev || ['Pemain 1', 'Pemain 2', 'Pemain 3', 'Pemain 4'];
     var sels = ['human', 'human', 'human', 'human'];
-    showOverlay('<div class="sheet start-sheet" role="dialog" aria-modal="true">' +
+    showOverlay('<div class="sheet sheet--form start-sheet" role="dialog" aria-modal="true">' +
       '<span class="ss-kicker">Main di perangkat ini</span>' +
       '<h2>Siapa yang bermain?</h2>' +
       '<p class="ss-sub">Giliran berjalan bergantian di perangkat ini. Kursi bot dimainkan otomatis.</p>' +
       '<form id="startForm" class="ss-form">' +
       [0, 1, 2, 3].map(function (i) { return seatRow(i, names[i], BOT_OPTS, sels[i]); }).join('') +
-      '<button class="btn btn--primary" type="submit">Mulai Bermain</button></form>' +
-      '<button class="btn" id="backModes">Kembali</button></div>');
+      '</form>' +
+      '<div class="sheet-acts">' +
+      '<button class="btn btn--primary" type="submit" form="startForm">Mulai Bermain</button>' +
+      '<button class="btn" id="backModes">Kembali</button></div></div>');
     $('backModes').addEventListener('click', openStart);
     $('startForm').addEventListener('submit', function (e) {
       e.preventDefault();
@@ -626,14 +722,14 @@
   function onGuestMsg(d) {
     if (!state || state.phase === 'over') return;
     var m = d.msg || {};
-    if (m.kind !== 'intent') return;
+    if (m.kind !== 'intent' || !m.act) return;
     var seat = -1;
     seats.forEach(function (s, i) { if (s.guestId === d.id) seat = i; });
     if (seat < 0) return;
     var actor = state.trade ? state.trade.to : (state.phase === 'resolve-buy' ? state.pendingBuyer : state.turn);
     if (seat !== actor) return;
     clearGuestTimer();
-    var res = G.intent(state, seat, m.kind, m.opt);
+    var res = G.intent(state, seat, m.act, m.opt);
     if (!res.ok) return;
     if (!res.path || !res.path.length) { broadcast(); render(); scheduleBot(); return; }
     (function (path) {
@@ -668,14 +764,16 @@
   }
 
   function openJoinSetup() {
-    showOverlay('<div class="sheet start-sheet" role="dialog" aria-modal="true">' +
+    showOverlay('<div class="sheet sheet--form start-sheet" role="dialog" aria-modal="true">' +
       '<span class="ss-kicker">Gabung ruang</span>' +
       '<h2>Masukkan kode</h2>' +
       '<form id="joinForm" class="ss-form">' +
-      '<label class="ss-row">Kode ruang <input id="joinCode" maxlength="6" autocomplete="off" placeholder="mis. K7Q2XA"></label>' +
+      '<label class="ss-row">Kode ruang <input id="joinCode" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="mis. K7Q2XA"></label>' +
       '<label class="ss-row">Namamu <input id="joinName" maxlength="14" placeholder="Namamu"></label>' +
-      '<button class="btn btn--primary" type="submit">Gabung</button></form>' +
-      '<button class="btn" id="backModes2">Kembali</button></div>');
+      '</form>' +
+      '<div class="sheet-acts">' +
+      '<button class="btn btn--primary" type="submit" form="joinForm">Gabung</button>' +
+      '<button class="btn" id="backModes2">Kembali</button></div></div>');
     $('backModes2').addEventListener('click', openStart);
     $('joinForm').addEventListener('submit', function (e) {
       e.preventDefault();
@@ -710,7 +808,10 @@
     if (m.kind === 'state' && m.snap) applySnapshot(m.snap, m.seats);
   }
 
+  var snapSeq = 0;
   async function applySnapshot(snap, pub) {
+    sendDone();
+    var my = ++snapSeq;
     var old = state ? state.players.map(function (p) { return p.pos; }) : null;
     state = G.restore(snap);
     if (pub) {
@@ -722,13 +823,14 @@
       busy = true; renderControls();
       if (state.dice && state.dice[0]) renderDice(state.dice);
       for (var i = 0; i < 4; i++) {
-        if (old[i] !== state.players[i].pos) await animatePath(i, diffPath(old[i], state.players[i].pos));
+        if (my !== snapSeq) return; // snapshot yang lebih baru sudah datang; biarkan dia yang menggambar
+        if (!document.hidden && old[i] !== state.players[i].pos) await animatePath(i, diffPath(old[i], state.players[i].pos));
       }
+      if (my !== snapSeq) return;
       busy = false;
     }
     hideOverlay();
-    renderDice([0, 0]);
-    state.players.forEach(function (p, i) { placeToken(i, p.pos, true); });
+    if (!old) renderDice(state.dice && state.dice[0] ? state.dice : null);
     render();
   }
 
@@ -757,7 +859,8 @@
   /* ---------- mulai main ---------- */
 
   function beginPlay() {
-    selectedId = null; busy = false;
+    selectedId = null; busy = false; sendDone();
+    try { window.scrollTo(0, 0); } catch (e) { /* abaikan */ }
     buildTokens();
     renderDice([0, 0]);
     hideOverlay();
@@ -787,16 +890,65 @@
     $('rulesOk').addEventListener('click', function () { hideOverlay(); if (state) render(); else openStart(); });
   }
 
+  /* ---------- zoom papan (penting di HP) ---------- */
+
+  var zoom = 1;
+  /* Lebar papan pada zoom 100% (CSS: max(640px, 100%)); diukur sekali, bukan memakai lebar jendela. */
+  function boardBase() {
+    var prev = boardEl.style.width;
+    boardEl.style.width = '';
+    var w = boardEl.offsetWidth || 640;
+    boardEl.style.width = prev;
+    return w;
+  }
+  function applyZoom() {
+    if (zoom === 1) {
+      boardEl.style.width = '';
+    } else {
+      boardEl.style.width = Math.round(boardBase() * zoom) + 'px';
+    }
+    var zr = $('zoomReset');
+    if (zr) zr.textContent = Math.round(zoom * 100) + '%';
+    if (state) state.players.forEach(function (p) { placeToken(p.id, p.pos, true); });
+  }
+  function setZoom(z) {
+    zoom = Math.min(2.5, Math.max(0.5, z));
+    applyZoom();
+  }
+  function wireZoom() {
+    var zin = $('zoomIn'), zout = $('zoomOut'), zr = $('zoomReset'), sc = $('boardScroll');
+    if (zin) zin.addEventListener('click', function () { setZoom(zoom + 0.25); });
+    if (zout) zout.addEventListener('click', function () { setZoom(zoom - 0.25); });
+    if (zr) zr.addEventListener('click', function () { setZoom(1); });
+    if (sc) {
+      var pinch0 = 0;
+      sc.addEventListener('touchmove', function (e) {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          var d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          if (pinch0 > 0) setZoom(zoom * (d / pinch0));
+          pinch0 = d;
+        }
+      }, { passive: false });
+      sc.addEventListener('touchend', function () { pinch0 = 0; applyZoom(); });
+      sc.addEventListener('wheel', function (e) {
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(zoom - Math.sign(e.deltaY) * 0.1); }
+      }, { passive: false });
+    }
+  }
+
   /* ---------- init ---------- */
 
   buildBoard();
+  wireZoom();
   $('btnRules').addEventListener('click', openRules);
   $('btnNew').addEventListener('click', leaveToStart);
-  window.addEventListener('resize', function () { if (state) state.players.forEach(function (p) { placeToken(p.id, p.pos, true); }); });
+  window.addEventListener('resize', function () { applyZoom(); });
   window.MonoDebug = {
     get state() { return state; },
     get busy() { return busy; },
     get session() { return session; },
+    get seats() { return seats; },
     actions: { act: act, cardOk: function () { hideOverlay(); act('cardOk'); } }
   };
   openStart();

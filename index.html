@@ -23,6 +23,13 @@
 
   <main class="table">
     <section class="board-wrap" aria-label="Papan permainan">
+      <div class="zoombar" role="group" aria-label="Zoom papan">
+        <button class="btn btn--small" id="zoomOut" type="button" aria-label="Perkecil papan">−</button>
+        <button class="btn btn--small" id="zoomReset" type="button">100%</button>
+        <button class="btn btn--small" id="zoomIn" type="button" aria-label="Perbesar papan">+</button>
+        <span class="ss-sub">Geser untuk melihat seluruh papan</span>
+      </div>
+      <div class="board-scroll" id="boardScroll">
       <div id="board" class="board">
         <div class="center">
           <h1>Monopoli</h1>
@@ -35,6 +42,7 @@
           <span id="turnChip" class="turn-chip">Siap bermain</span>
         </div>
         <div id="tokens" class="tokens" aria-hidden="true"></div>
+      </div>
       </div>
     </section>
 

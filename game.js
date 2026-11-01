@@ -157,6 +157,10 @@
       log(s, p.name + ' BANGKRUT. Seluruh aset kembali ke bank.', 'bad');
     }
     p.cash = 0; p.jailCards = 0;
+    if (s.trade && (s.trade.from === p.id || s.trade.to === p.id)) {
+      log(s, 'Tawaran dagang yang melibatkan ' + p.name + ' batal karena kebangkrutan.', 'warn');
+      s.trade = null;
+    }
     var left = active(s);
     if (left.length === 1) { s.winner = left[0].id; s.phase = 'over'; log(s, left[0].name + ' MENANG!', 'sys'); }
   }
@@ -274,17 +278,19 @@
       var path = movePlayer(s, p, d[0] + d[1], 1);
       var info = resolveLanding(s);
       s.canExtra = false; // bebas lewat kembar tidak mendapat lemparan tambahan
-      if (s.phase === 'roll') s.phase = 'end';
+      if (!p.bankrupt && s.phase === 'roll') s.phase = 'end';
       return { dice: d, path: path, freed: true, info: info };
     }
     p.jailTurns += 1;
     if (p.jailTurns >= RULES.jailMaxTurns) {
       transfer(s, p.id, null, RULES.jailFine, p.name + ' gagal tiga kali; membayar denda ' + fmt(RULES.jailFine) + '.');
+      /* Denda bisa membuat pemain bangkrut: giliran wajib lanjut, bukan tertahan di fase penjara. */
+      if (p.bankrupt) { endTurn(s); return { dice: d, path: [], freed: true, paidFine: true, info: {} }; }
       p.jail = false; p.jailTurns = 0;
       var path2 = movePlayer(s, p, d[0] + d[1], 1);
       var info2 = resolveLanding(s);
       s.canExtra = false;
-      if (s.phase === 'roll') s.phase = 'end';
+      if (!p.bankrupt && s.phase === 'roll') s.phase = 'end';
       return { dice: d, path: path2, freed: true, paidFine: true, info: info2 };
     }
     log(s, 'Tidak kembar. ' + p.name + ' tetap di penjara (percobaan ' + p.jailTurns + '/3).', 'warn');
@@ -295,6 +301,7 @@
   function payFine(s) {
     var p = cur(s);
     transfer(s, p.id, null, RULES.jailFine, p.name + ' membayar denda penjara ' + fmt(RULES.jailFine) + '.');
+    if (p.bankrupt) { endTurn(s); return; }
     p.jail = false; p.jailTurns = 0;
     s.phase = 'roll';
   }
@@ -508,11 +515,13 @@
 
   function tradeValue(s, id) { return tile(id).price; }
 
-  function canOffer(s, from, to, giveIds, getIds, cash) {
-    if (s.trade) return false;
+  /* Keabsahan isi tawaran saja (tanpa melihat apakah sudah ada tawaran berjalan),
+     supaya tawaran yang sedang menunggu jawaban tetap bisa diterima. */
+  function validOffer(s, from, to, giveIds, getIds, cash) {
     if (from === to) return false;
     var A = s.players[from], B = s.players[to];
     if (!A || !B || A.bankrupt || B.bankrupt) return false;
+    giveIds = giveIds || []; getIds = getIds || [];
     cash = cash || 0;
     if (cash < 0 || A.cash < cash) return false;
     var ok = giveIds.every(function (id) { var pr = s.props[id]; return pr && pr.owner === from && pr.houses === 0 && !pr.mortgaged; }) &&
@@ -521,6 +530,11 @@
     var seen = {};
     var dup = giveIds.concat(getIds).some(function (id) { if (seen[id]) return true; seen[id] = 1; return false; });
     return !dup;
+  }
+
+  function canOffer(s, from, to, giveIds, getIds, cash) {
+    if (s.trade) return false;
+    return validOffer(s, from, to, giveIds, getIds, cash);
   }
 
   function proposeTrade(s, from, to, giveIds, getIds, cash) {
@@ -545,7 +559,7 @@
     var tr = s.trade;
     if (!tr) return false;
     var A = s.players[tr.from], B = s.players[tr.to];
-    if (accept && canOffer(s, tr.from, tr.to, tr.give, tr.get, tr.cash)) {
+    if (accept && validOffer(s, tr.from, tr.to, tr.give, tr.get, tr.cash)) {
       tr.give.forEach(function (id) { s.props[id].owner = tr.to; });
       tr.get.forEach(function (id) { s.props[id].owner = tr.from; });
       if (tr.cash > 0) { A.cash -= tr.cash; B.cash += tr.cash; }

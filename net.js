@@ -247,7 +247,8 @@
   var hostSendHello = false;
 
   function send(kind, data) {
-    var msg = Object.assign({ kind: kind }, data);
+    /* Jenis amplop selalu menang: isi pesan tidak boleh menimpa kind. */
+    var msg = Object.assign({}, data || {}, { kind: kind });
     if (isHost) busPost(Object.assign({ from: myId, to: 'all', room: room }, msg));
     else if (hostSend) hostSend(msg);
     else if (hostConn) busPost(Object.assign({ from: myId, to: 'host', room: room }, msg));

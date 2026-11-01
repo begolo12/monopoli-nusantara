@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monopoli Nusantara: main berempat, sendiri, atau online</title>
+  <meta name="description" content="Game papan Monopoli edisi Nusantara: main berempat di satu perangkat, lawan bot, atau online beda perangkat. Beli properti, dagang, bangun rumah, dan jadilah yang terakhir berdiri.">
+  <link rel="preconnect" href="https://api.fontshare.com">
+  <link href="https://api.fontshare.com/v2/css?f[]=chillax@500,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <b>Monopoli</b>
+      <span>Edisi Nusantara, main sendiri, berempat, atau online</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn btn--small" id="btnRules" type="button">Aturan</button>
+      <button class="btn btn--small" id="btnNew" type="button">Main Baru</button>
+    </div>
+  </header>
+
+  <main class="table">
+    <section class="board-wrap" aria-label="Papan permainan">
+      <div id="board" class="board">
+        <div class="center">
+          <h1>Monopoli</h1>
+          <p class="c-sub">Kumpulkan properti Nusantara, bangun rumah, jangan bangkrut.</p>
+          <div class="c-mid">
+            <div class="deck deck-chance">Kesempatan <small><span id="deckChance" class="num">13</span> kartu</small></div>
+            <div id="dice" class="dice" aria-live="polite"><span class="dice-idle">Dadu siap</span></div>
+            <div class="deck deck-chest">Dana Umum <small><span id="deckChest" class="num">16</span> kartu</small></div>
+          </div>
+          <span id="turnChip" class="turn-chip">Siap bermain</span>
+        </div>
+        <div id="tokens" class="tokens" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <aside class="side" aria-label="Panel permainan">
+      <div id="turnCard" class="turn-card"></div>
+      <div id="controls" class="controls"></div>
+      <div id="propPanel" class="prop-panel" hidden></div>
+      <ul id="players" class="players"></ul>
+      <div class="logbox">
+        <h2>Catatan permainan</h2>
+        <ul id="log"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <div id="overlay" class="overlay" hidden></div>
+
+  <noscript>
+    <div class="sheet">
+      <h2>Butuh JavaScript</h2>
+      <p>Monopoli Nusantara dimainkan lewat browser: dadu, sewa, dan giliran dihitung oleh skrip halaman. Nyalakan JavaScript lalu muat ulang untuk bermain berempat di perangkat ini.</p>
+    </div>
+  </noscript>
+
+  <script src="./data.js"></script>
+  <script src="./game.js"></script>
+  <script src="./bot.js"></script>
+  <script src="./net.js"></script>
+  <script src="./ui.js"></script>
+</body>
+</html>

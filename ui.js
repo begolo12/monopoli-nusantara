@@ -171,7 +171,8 @@
   async function animatePath(pid, path) {
     for (var i = 0; i < path.length; i++) {
       placeToken(pid, path[i]);
-      await sleep(150);
+      /* Langkah ringkas: 12 langkah (dadu kembar 6+6) selesai di bawah 1,4 detik. */
+      await sleep(110);
     }
     settleTokens();
   }
@@ -500,6 +501,9 @@
     busy = true; renderControls();
     var seat = state.trade ? state.trade.to : (state.phase === 'resolve-buy' ? state.pendingBuyer : state.turn);
     var res = G.intent(state, seat, kind, opt);
+    /* Siarkan hasilnya lebih dulu: tiap perangkat menonton animasi langkahnya
+       sendiri, jadi pemain lain tidak ikut menunggu animasi di layar host. */
+    if (session.mode === 'online' && session.isHost) broadcast();
     if (res.dice) renderDice(res.dice);
     if (res.path && res.path.length) await animatePath(seat, res.path);
     await snapToPos(seat);
@@ -548,6 +552,7 @@
     var res = { ok: true, path: [] };
     if (step.kind === 'cardOk' && !state.pendingCard) { busy = false; afterChange(); return; }
     res = G.intent(state, seat, step.kind, step);
+    if (session.mode === 'online' && session.isHost) broadcast();
     if (res.dice) renderDice(res.dice);
     if (res.path && res.path.length) await animatePath(seat, res.path);
     await snapToPos(seat);
@@ -741,19 +746,41 @@
   function renderHostLobby() {
     var rows = seats.map(function (s, i) {
       var tag = s.type === 'sini' ? 'Saya' : (s.type === 'online' ? (s.guestId ? esc(s.name) + ' (online)' : 'Menunggu pemain…') : 'Bot ' + Bot.PROFILES[s.bot].label.toLowerCase());
+      /* Tiap kursi bisa diatur: biarkan untuk tamu online, atau isi bot. */
+      var pick = '';
+      if (s.type !== 'sini') {
+        var cur = s.type === 'online' ? 'online' : 'bot-' + (s.bot || 'sedang');
+        pick = '<select class="seat-pick" data-seat="' + i + '" aria-label="Isi kursi ' + (i + 1) + '"' + (s.guestId ? ' disabled' : '') + '>' +
+          '<option value="online"' + (cur === 'online' ? ' selected' : '') + '>Tamu online</option>' +
+          ['mudah', 'sedang', 'sulit'].map(function (b) {
+            return '<option value="bot-' + b + '"' + (cur === 'bot-' + b ? ' selected' : '') + '>' +
+              'Bot ' + Bot.PROFILES[b].label.toLowerCase() + '</option>';
+          }).join('') + '</select>';
+      }
       return '<li class="pl pl-p' + (i + 1) + '"><span class="pl-dot tok-p' + (i + 1) + '">' + (i + 1) + '</span>' +
         '<span class="pl-name">' + esc(s.name) + '</span><span class="badge">' + tag + '</span>' +
-        (s.type === 'online' && !s.guestId ? '<span class="pl-meta num">kosong</span>' : '') + '</li>';
+        (s.type === 'online' && !s.guestId ? '<span class="pl-meta num">kosong</span>' : '') +
+        pick + '</li>';
     }).join('');
     showOverlay('<div class="sheet start-sheet" role="dialog" aria-modal="true">' +
       '<span class="ss-kicker">Ruang online</span>' +
       '<h2>Kode: <span class="room-code">' + esc(session.room) + '</span></h2>' +
       '<p class="ss-sub net-status">' + esc(hostNetMsg) + '</p>' +
-      '<p class="ss-sub">Bagikan kode ini ke pasangan. Mereka pilih Gabung ruang lalu masukkan kode dan namanya. Kursi kosong yang tersisa bisa diisi bot.</p>' +
-      '<ul class="players">' + rows + '</ul>' +
+      '<p class="ss-sub">Bagikan kode ini ke pemain lain. Mereka pilih Gabung ruang, lalu masukkan kode dan namanya.</p>' +
       '<div class="pp-acts"><label class="ss-row">Nama saya <input id="hostName" maxlength="14" value="' + esc(session.myName || 'Host') + '"></label></div>' +
+      '<ul class="players">' + rows + '</ul>' +
       '<div class="pp-acts"><button class="btn btn--primary" id="hostStart">Mulai Bermain</button>' +
       '<button class="btn" id="hostCancel">Batal</button></div></div>');
+    Array.prototype.forEach.call(document.querySelectorAll('.seat-pick'), function (sel) {
+      sel.addEventListener('change', function () {
+        var i = +sel.dataset.seat;
+        if (isNaN(i) || !seats[i] || seats[i].guestId) return;
+        var v = sel.value;
+        if (v === 'online') { seats[i].type = 'online'; seats[i].bot = null; seats[i].name = 'Kursi ' + (i + 1); }
+        else { seats[i].type = 'bot'; seats[i].bot = v.replace('bot-', ''); seats[i].name = 'Kursi ' + (i + 1); }
+        renderHostLobby();
+      });
+    });
     $('hostStart').addEventListener('click', function () {
       session.myName = $('hostName').value.trim() || 'Host';
       seats[0].name = session.myName;
@@ -825,7 +852,9 @@
     clearGuestTimer();
     var res = G.intent(state, seat, m.act, m.opt);
     if (!res.ok) return;
-    if (!res.path || !res.path.length) { broadcast(); render(); scheduleBot(); return; }
+    /* Hasil langsung disiarkan; animasi di tiap perangkat berjalan sendiri-sendiri. */
+    broadcast();
+    if (!res.path || !res.path.length) { render(); scheduleBot(); return; }
     (function (path) {
       busy = true; renderControls();
       animatePath(seat, path).then(function () { snapToPos(seat); }).then(function () {

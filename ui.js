@@ -38,6 +38,29 @@
 
   /* ---------- papan ---------- */
 
+  /* Titik patah untuk nama yang terlalu panjang bagi petak HP (~30px). */
+  var HYPHEN = {
+    Malioboro: 'Malio\u00ADboro', Kesempatan: 'Kesem\u00ADpatan',
+    Palembang: 'Palem\u00ADbang', Balikpapan: 'Balik\u00ADpapan',
+    Borobudur: 'Boro\u00ADbudur', Yogyakarta: 'Yogya\u00ADkarta',
+    Surabaya: 'Sura\u00ADbaya', Semarang: 'Sema\u00ADrang',
+    Sudirman: 'Sudir\u00ADman', Makassar: 'Makas\u00ADsar',
+    Penghasilan: 'Peng\u00ADhasilan'
+  };
+
+  function hyphenate(name) {
+    return name.split(/\s+/).map(function (w) { return HYPHEN[w] || w; }).join(' ');
+  }
+
+  /* Kata/kepingan terpanjang menentukan ukuran huruf: --n dibaca .tname di styles.css. */
+  function longestChunk(name) {
+    var n = 1;
+    hyphenate(name).split(/\s+/).forEach(function (w) {
+      w.split('\u00AD').forEach(function (part) { n = Math.max(n, part.length); });
+    });
+    return n;
+  }
+
   function buildBoard() {
     BOARD.forEach(function (t) {
       var c = cellOf(t.id);
@@ -49,7 +72,9 @@
       if (t.group && t.group !== 'rail' && t.group !== 'util') inner += '<span class="band grp-' + t.group + '"></span>';
       if (t.group === 'rail') inner += '<span class="band grp-rail"></span>';
       if (t.group === 'util') inner += '<span class="band grp-util"></span>';
-      inner += '<span class="tname">' + t.name + '</span>';
+      /* Nama panjang dipatahkan di tempat yang wajar (soft hyphen), bukan di tengah kata
+         sembarang. Dengan begitu semua petak bisa memakai satu ukuran huruf yang sama. */
+      inner += '<span class="tname" style="--n:' + longestChunk(t.name) + '">' + hyphenate(t.name) + '</span>';
       if (t.price) inner += '<span class="tprice num">' + G.fmt(t.price) + '</span>';
       if (t.type === 'tax') inner += '<span class="tprice num">' + G.fmt(t.amount) + '</span>';
       inner += '<span class="houses"></span><span class="ownring"></span>';
@@ -87,7 +112,11 @@
     var corner = (tileId % 10 === 0);
     el.classList.toggle('sm', !corner);
     var slot = SLOTS[pid % 4];
-    var size = corner ? 20 : 15;
+    /* Token ikut mengecil di papan kecil supaya nama kota tidak tertutup. */
+    var size = Math.round(Math.max(10, Math.min(corner ? 22 : 17, boardEl.clientWidth * (corner ? 0.032 : 0.026))));
+    el.style.width = size + 'px';
+    el.style.height = size + 'px';
+    el.style.fontSize = Math.round(size * 0.56) + 'px';
     var x = t.offsetLeft + t.offsetWidth * slot[0] - size / 2;
     var y = t.offsetTop + t.offsetHeight * slot[1] - size / 2;
     if (instant) el.style.transition = 'none';

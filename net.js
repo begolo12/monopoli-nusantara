@@ -236,7 +236,8 @@
       tries++;
       if (joined.host) { clearInterval(myTimer); hostSendHello = false; return; }
       hostSend({ kind: 'hello', name: name || 'Tamu' });
-      if (tries > 20) {
+      /* Jaringan lambat / relay jauh bisa butuh puluhan detik; jangan menyerah terlalu cepat. */
+      if (tries > 60) {
         clearInterval(myTimer);
         hostSendHello = false;
         emit('error', { message: 'Host tidak menjawab. Pastikan kode ruang benar dan tab host masih terbuka.' });

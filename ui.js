@@ -788,7 +788,7 @@
         showOverlay('<div class="sheet" role="dialog"><h2>Gagal gabung</h2><p class="ss-sub">' + esc(d.message || 'Tidak bisa gabung.') + '</p><button class="btn btn--primary" id="rjOk">Kembali</button></div>');
         $('rjOk').addEventListener('click', openStart);
       });
-      showOverlay('<div class="sheet" role="dialog"><h2>Menghubungi host…</h2><p class="ss-sub">Pastikan tab host masih terbuka di perangkat host.</p></div>');
+      showOverlay('<div class="sheet" role="dialog"><h2>Menghubungi host…</h2><p class="ss-sub">Pastikan tab host masih terbuka di perangkat host.</p><p class="ss-sub">Di jaringan lambat ini bisa sampai 30 detik. Jangan tutup halaman.</p></div>');
       Net.joinRoom(code, name);
     });
   }

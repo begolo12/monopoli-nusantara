@@ -539,7 +539,7 @@
     var ap = state.players[seat];
     if (!ap.bot || !authorityFor(seat)) return;
     botScheduled = true;
-    setTimeout(function () { botScheduled = false; botStep(); }, 900);
+    setTimeout(function () { botScheduled = false; botStep(); }, 700);
   }
 
   async function botStep() {
@@ -657,6 +657,7 @@
 
   function leaveToStart() {
     if (guestTimer) { clearTimeout(guestTimer); guestTimer = null; }
+    keepAwake(false);
     try { Net.close(); } catch (e) { /* abaikan */ }
     state = null;
     session = { mode: 'local', mySeats: [0, 1, 2, 3], isHost: true, room: null, mySeat: null, myName: '' };
@@ -1013,7 +1014,25 @@
     render();
     scheduleBot();
     armGuestTimer();
+    keepAwake(session.mode === 'online' && session.isHost);
   }
+
+  /* Host online adalah "server" permainan: layar HP-nya jangan sampai mati
+     lalu menidurkan tab dan menghentikan giliran semua orang. */
+  var wakeLock = null;
+  function keepAwake(on) {
+    try {
+      if (on) {
+        if (!wakeLock && navigator.wakeLock && navigator.wakeLock.request) {
+          navigator.wakeLock.request('screen').then(function (wl) { wakeLock = wl; }).catch(function () { /* ditolak */ });
+        }
+      } else if (wakeLock) { wakeLock.release(); wakeLock = null; }
+    } catch (e) { /* peramban tanpa wakeLock: abaikan */ }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden || !state || session.mode !== 'online' || !session.isHost) return;
+    if (wakeLock === null) keepAwake(true);
+  });
   var _afterChangeBase = afterChange;
   afterChange = function () {
     _afterChangeBase();

@@ -29,6 +29,15 @@
   function uid() {
     return 'p' + Math.random().toString(36).slice(2, 8);
   }
+  /* ID tamu disimpan per tab: halaman yang dimuat ulang (misal HP mati layar)
+     kembali memakai kursi yang sama, bukan dianggap tamu baru. */
+  function guestId() {
+    try {
+      var v = sessionStorage.getItem('monopoli-gid-v1');
+      if (!v) { v = uid(); sessionStorage.setItem('monopoli-gid-v1', v); }
+      return v;
+    } catch (e) { return uid(); }
+  }
   function mid() {
     return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
   }
@@ -186,7 +195,7 @@
   /* ---- tamu ---- */
   function joinRoom(code, name) {
     close();
-    isHost = false; room = (code || '').toUpperCase().trim(); myId = uid();
+    isHost = false; room = (code || '').toUpperCase().trim(); myId = guestId();
     localOpen(room);
     emit('room', { room: room, id: myId });
     ensurePeer(function (err) {

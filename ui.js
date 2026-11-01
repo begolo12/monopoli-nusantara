@@ -91,7 +91,52 @@
 
   /* ---------- token ---------- */
 
-  var SLOTS = [[0.32, 0.34], [0.68, 0.34], [0.32, 0.7], [0.68, 0.7]];
+  /* Empat bidak khas papan permainan: bidak, mobil, topi, dan perahu. Digambar sebagai
+     siluet SVG supaya tetap terbaca di petak sekecil 10px — huruf awal dulu jadi bintik. */
+  var PIECES = [
+    '<circle class="tk-shape" cx="12" cy="6.4" r="4"/>' +
+      '<path class="tk-shape" d="M9 17.4 L9.6 13 C10 11.2 11 10.2 12 10.2 C13 10.2 14 11.2 14.4 13 L15 17.4 Z"/>' +
+      '<rect class="tk-shape" x="6.2" y="17.2" width="11.6" height="3.4" rx="1.7"/>',
+    '<path class="tk-shape" d="M4.2 11 L6.3 10.4 L8.3 7.8 C8.6 7.4 9.1 7.1 9.6 7.1 H14.4 C14.9 7.1 15.4 7.4 15.7 7.8 L17.7 10.4 L19.8 11 C20.4 11.2 20.8 11.7 20.8 12.3 V14.3 C20.8 14.9 20.3 15.4 19.7 15.4 H4.3 C3.7 15.4 3.2 14.9 3.2 14.3 V12.3 C3.2 11.7 3.6 11.2 4.2 11 Z"/>' +
+      '<circle class="tk-dark" cx="7.6" cy="16.6" r="2.1"/>' +
+      '<circle class="tk-dark" cx="16.4" cy="16.6" r="2.1"/>',
+    '<path class="tk-shape" d="M8.8 4.2 H15.2 C15.7 4.2 16.1 4.6 16.2 5.1 L17.2 16.3 C17.2 16.9 16.8 17.3 16.2 17.3 H7.8 C7.2 17.3 6.8 16.9 6.8 16.3 L7.8 5.1 C7.9 4.6 8.3 4.2 8.8 4.2 Z"/>' +
+      '<rect class="tk-shape" x="3.4" y="16.5" width="17.2" height="3.1" rx="1.55"/>',
+    '<path class="tk-shape" d="M3.4 15.6 H20.6 L18 19.5 C17.6 20.1 17 20.4 16.3 20.4 H7.7 C7 20.4 6.4 20.1 6 19.5 Z"/>' +
+      '<path class="tk-shape" d="M12.6 3.6 V14 H18.8 Z"/>' +
+      '<rect class="tk-shape" x="11.4" y="3.6" width="1.4" height="10.4" rx="0.7"/>'
+  ];
+
+  function pieceSvg(pid) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true">' + PIECES[pid % 4] + '</svg>';
+  }
+
+  /* Bidak berbaris di bibir petak, tepat di atas pita warna (sisi dalam papan),
+     jadi nama kota & harga tetap terbaca. Petak sudut tidak punya pita: di sana
+     bidak ditaruh 2x2 di bawah nama petak. */
+  var CORNER_SLOTS = [[0.28, 0.58], [0.72, 0.58], [0.28, 0.85], [0.72, 0.85]];
+
+  function tokenSpot(pid, tileId) {
+    var t = tileEl(tileId);
+    var corner = (tileId % 10 === 0);
+    if (!t || corner) {
+      var s = CORNER_SLOTS[pid % 4];
+      return { x: s[0], y: s[1] };
+    }
+    var mates = state.players.filter(function (p) { return p.pos === tileId; })
+      .map(function (p) { return p.id; })
+      .sort(function (a, b) { return a - b; });
+    /* Satu bidak di tengah bibir; makin ramai makin rapat, seperti bidak berdiri berdempet.
+       Saat bidak sedang melintas (belum tercatat di petak itu) ia lewat di tengah. */
+    var idx = mates.indexOf(pid);
+    var f = idx < 0 ? 0.5 : (idx + 1) / (mates.length + 1);
+    var cls = t.className;
+    if (/side-bottom/.test(cls)) return { x: f, y: 0.125 };
+    if (/side-top/.test(cls)) return { x: f, y: 0.875 };
+    if (/side-left/.test(cls)) return { x: 0.875, y: f };
+    if (/side-right/.test(cls)) return { x: 0.125, y: f };
+    return { x: f, y: 0.5 };
+  }
 
   function buildTokens() {
     tokensEl.innerHTML = '';
@@ -99,7 +144,7 @@
       var el = document.createElement('span');
       el.className = 'token tok-' + p.color;
       el.dataset.p = p.id;
-      el.textContent = p.name.charAt(0).toUpperCase();
+      el.innerHTML = pieceSvg(p.id);
       tokensEl.appendChild(el);
       placeToken(p.id, p.pos, true);
     });
@@ -109,16 +154,13 @@
     var el = tokensEl.querySelector('[data-p="' + pid + '"]');
     var t = tileEl(tileId);
     if (!el || !t) return;
-    var corner = (tileId % 10 === 0);
-    el.classList.toggle('sm', !corner);
-    var slot = SLOTS[pid % 4];
-    /* Token ikut mengecil di papan kecil supaya nama kota tidak tertutup. */
-    var size = Math.round(Math.max(10, Math.min(corner ? 22 : 17, boardEl.clientWidth * (corner ? 0.032 : 0.026))));
+    var slot = tokenSpot(pid, tileId);
+    /* Bidak ikut mengecil di papan kecil; batas bawah 9px supaya siluetnya masih terbaca. */
+    var size = Math.round(Math.max(9, Math.min(14, boardEl.clientWidth * 0.0225)));
     el.style.width = size + 'px';
     el.style.height = size + 'px';
-    el.style.fontSize = Math.round(size * 0.56) + 'px';
-    var x = t.offsetLeft + t.offsetWidth * slot[0] - size / 2;
-    var y = t.offsetTop + t.offsetHeight * slot[1] - size / 2;
+    var x = t.offsetLeft + t.offsetWidth * slot.x - size / 2;
+    var y = t.offsetTop + t.offsetHeight * slot.y - size / 2;
     if (instant) el.style.transition = 'none';
     el.style.transform = 'translate(' + x + 'px,' + y + 'px)';
     el.dataset.tile = tileId;
@@ -131,6 +173,12 @@
       placeToken(pid, path[i]);
       await sleep(150);
     }
+    settleTokens();
+  }
+
+  /* Barisan bidak bergeser saat ada yang datang/pergi: rapikan semua sekaligus. */
+  function settleTokens() {
+    state.players.forEach(function (p) { placeToken(p.id, p.pos); });
   }
   function diffPath(from, to) {
     var fwd = (to - from + 40) % 40, bwd = (from - to + 40) % 40;
@@ -144,6 +192,7 @@
     var p = state.players[pid];
     var curTile = el ? el.dataset.tile : null;
     if (curTile !== String(p.pos)) { placeToken(pid, p.pos); await sleep(160); }
+    settleTokens();
   }
 
   /* ---------- dadu ---------- */
@@ -555,8 +604,10 @@
       var give = Array.prototype.slice.call(document.querySelectorAll('[data-give]:checked')).map(function (c) { return +c.dataset.give; });
       var get = Array.prototype.slice.call(document.querySelectorAll('[data-get]:checked')).map(function (c) { return +c.dataset.get; });
       var cash = Math.max(0, parseInt(($('ofCash').value || '0').replace(/[^0-9]/g, ''), 10) || 0);
+      /* Semua isian dibaca dulu: hideOverlay() mengosongkan lembar, jadi $('ofTo') jadi null. */
+      var to = +$('ofTo').value;
       hideOverlay();
-      act('offer', { to: +$('ofTo').value, give: give, get: get, cash: cash });
+      act('offer', { to: to, give: give, get: get, cash: cash });
     });
   }
   function openOfferTarget(fromSeat, wantId) {
@@ -714,6 +765,14 @@
   function onGuestHello(d) {
     var known = -1;
     seats.forEach(function (s, i) { if (s.guestId === d.id) known = i; });
+    if (known < 0) {
+      known = reclaimSeat(d.id);
+      if (known >= 0) {
+        Net.sendToGuest(d.id, { kind: 'welcome', seat: known, seats: pubSeats() });
+        broadcast(); render(); scheduleBot();
+        return;
+      }
+    }
     if (known >= 0) {
       Net.sendToGuest(d.id, { kind: 'welcome', seat: known, seats: pubSeats() });
       if (state) broadcast();
@@ -740,8 +799,9 @@
       if (s.guestId === d.id) {
         s.guestId = null;
         if (state) {
+          var leftName = state.players[i].name;
           s.type = 'bot'; s.bot = 'sedang'; s.name = 'Bot ' + (i + 1);
-          G.log(state, s.name + ' mengambil alih kursi yang ditinggalkan.', 'warn');
+          G.log(state, leftName + ' keluar; bot sedang mengambil alih kursinya.', 'warn');
           state.players[i].bot = 'sedang';
           broadcast(); render(); scheduleBot();
         } else { s.name = 'Kursi ' + (i + 1); renderHostLobby(); }
@@ -754,7 +814,12 @@
     if (m.kind !== 'intent' || !m.act) return;
     var seat = -1;
     seats.forEach(function (s, i) { if (s.guestId === d.id) seat = i; });
-    if (seat < 0) return;
+    if (seat < 0) {
+      /* Bot sudah meminjam kursinya; pemain aslinya ambil alih lagi lalu aksinya diproses. */
+      seat = reclaimSeat(d.id);
+      if (seat < 0) return;
+      broadcast(); render();
+    }
     var actor = state.trade ? state.trade.to : (state.phase === 'resolve-buy' ? state.pendingBuyer : state.turn);
     if (seat !== actor) return;
     clearGuestTimer();
@@ -866,23 +931,46 @@
   function clearGuestTimer() {
     if (guestTimer) { clearTimeout(guestTimer); guestTimer = null; }
   }
+  /* Tamu boleh mengobrol dulu: 3 menit tanpa aksi baru kursinya dipinjamkan ke bot,
+     dan tamu itu tetap bisa mengambilnya kembali kapan saja. */
+  var GUEST_WAIT_MS = 180000;
+
   function armGuestTimer() {
     if (!session.isHost || session.mode !== 'online' || !state) return;
     clearGuestTimer();
     var p = G.cur(state);
     if (p.bot) return;
-    var i = seats.findIndex(function (s) { return s.guestId && s.type === 'online'; });
     var isGuestTurn = seats[state.turn] && seats[state.turn].guestId;
     if (!isGuestTurn) return;
     var key = state.turn + ':' + state.phase + ':' + state.round;
     guestTimer = setTimeout(function () {
       if (!state || (state.turn + ':' + state.phase + ':' + state.round) !== key || state.phase === 'over') return;
       var seat = state.turn;
-      G.log(state, state.players[seat].name + ' tidak merespons; kursinya diambil alih bot sedang.', 'warn');
-      seats[seat].type = 'bot'; seats[seat].bot = 'sedang'; seats[seat].guestId = null; seats[seat].name = 'Bot ' + (seat + 1);
+      var sd = seats[seat];
+      G.log(state, state.players[seat].name + ' belum bergerak; bot meminjam kursinya sampai dia kembali.', 'warn');
+      sd.takenFrom = sd.guestId; sd.takenName = sd.name;
+      sd.type = 'bot'; sd.bot = 'sedang'; sd.guestId = null; sd.name = 'Bot ' + (seat + 1);
       state.players[seat].bot = 'sedang';
       afterChange();
-    }, 60000);
+    }, GUEST_WAIT_MS);
+  }
+
+  /* Kursi yang dipinjamkan ke bot bisa diambil lagi oleh tamu aslinya. */
+  function reclaimSeat(guestId) {
+    if (!guestId) return -1;
+    var slot = -1;
+    seats.forEach(function (s, i) { if (slot < 0 && s.takenFrom === guestId) slot = i; });
+    if (slot < 0) return -1;
+    var s = seats[slot];
+    s.type = 'online'; s.bot = null; s.guestId = guestId;
+    s.name = s.takenName || ('Tamu ' + (slot + 1));
+    s.takenFrom = null; s.takenName = null;
+    if (state) {
+      state.players[slot].bot = null;
+      state.players[slot].name = s.name;
+      G.log(state, s.name + ' kembali memegang kursinya.', 'info');
+    }
+    return slot;
   }
 
   /* ---------- mulai main ---------- */
@@ -914,7 +1002,7 @@
       '<li>Kekurangan uang: bangunan terjual dan properti terhipotek otomatis; tetap kurang berarti bangkrut.</li>' +
       '<li>Pemain terakhir yang tidak bangkrut menang.</li>' +
       '<li>Kursi kosong bisa diisi bot: mudah (santai), sedang (membangun), sulit (agresif dan bertahan di penjara saat papan berbahaya).</li>' +
-      '<li>Online: host membuat ruang, tamu gabung dengan kode. Jika tamu diam 60 detik, kursinya diambil alih bot.</li>' +
+      '<li>Online: host membuat ruang, tamu gabung dengan kode. Bila tamu diam 3 menit, bot meminjam kursinya, dan tamu bisa mengambilnya kembali dengan beraksi atau gabung ulang.</li>' +
       '</ul><button class="btn btn--primary" id="rulesOk">Mengerti</button></div>');
     $('rulesOk').addEventListener('click', function () { hideOverlay(); if (state) render(); else openStart(); });
   }

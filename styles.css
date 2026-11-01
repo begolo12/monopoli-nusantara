@@ -92,6 +92,8 @@
 .side-top { padding-bottom: 24%; }
 .side-left { padding-right: 20%; }
 .side-right { padding-left: 20%; }
+/* Petak sudut: nama petak di atas, ruang bawah untuk 4 bidak yang berdesakan di MULAI. */
+.side-corner { padding-bottom: 40%; }
 .tname {
   /* --n = panjang kepingan terpanjang; patah kata hanya di soft hyphen dari ui.js. */
   font-size: min(1.7cqw, 11.5px, calc(11.5cqw / var(--n, 8)));
@@ -218,16 +220,25 @@
 .tokens { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .token {
   position: absolute; top: 0; left: 0; width: 20px; height: 20px;
-  display: grid; place-items: center; border-radius: 50%;
-  font-size: var(--fs-tiny); font-weight: 600; color: var(--color-card);
-  background: var(--tok-c, var(--color-ink));
-  box-shadow: 0 2px 4px var(--shadow-ink-35), inset 0 1px 0 var(--sheen-40);
+  color: var(--tok-c, var(--color-ink));
+  /* Halo kertas + bayangan tipis: bidak tetap terbaca walau berdiri di atas nama petak. */
+  filter: drop-shadow(0 0 1px var(--color-card)) drop-shadow(0 0 1.5px var(--color-card))
+          drop-shadow(0 1px 1px var(--shadow-ink-35));
   transition: transform 150ms var(--ease-snap), opacity var(--dur-short) var(--ease-snap);
+}
+.token svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* Tepi kertas: siluet diberi garis tipis warna kartu supaya tetap terpisah dari petak. */
+.token svg .tk-shape {
+  fill: currentColor; stroke: var(--color-card); stroke-width: 1.1;
+  stroke-linejoin: round; paint-order: stroke fill;
+}
+.token svg .tk-dark {
+  fill: color-mix(in oklab, var(--color-ink) 70%, var(--tok-c, var(--color-ink)));
+  stroke: var(--color-card); stroke-width: 0.9; paint-order: stroke fill;
 }
 .tok-p1 { --tok-c: var(--tok-p1); } .tok-p2 { --tok-c: var(--tok-p2); }
 .tok-p3 { --tok-c: var(--tok-p3); } .tok-p4 { --tok-c: var(--tok-p4); }
-.token.down { opacity: 0.3; filter: grayscale(1); }
-.token.sm { width: 15px; height: 15px; font-size: 9px; }
+.token.down { opacity: 0.32; filter: grayscale(1) drop-shadow(0 1px 1px var(--shadow-ink-35)); }
 
 /* ---------- sisi kanan ---------- */
 .side { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
